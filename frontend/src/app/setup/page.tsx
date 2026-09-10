@@ -15,6 +15,7 @@ import { TiltCard } from "@/components/motion/TiltCard";
 import { Pressable } from "@/components/motion/Pressable";
 import { MagneticButton } from "@/components/motion/MagneticButton";
 import { Reveal } from "@/components/motion/Reveal";
+import { AiBusyOverlay } from "@/components/motion/AiBusyOverlay";
 import { useMotion } from "@/components/motion/GsapProvider";
 
 const DIFF_KEYS = Object.keys(DIFFICULTY_LABELS) as Difficulty[];
@@ -35,6 +36,7 @@ export default function SetupPage() {
   const [count, setCount] = useState<number>(5);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [engineNote, setEngineNote] = useState<string | null>(null);
 
   const armed = selected.length;
   const specs = DIFFICULTY_LABELS[difficulty];
@@ -94,6 +96,7 @@ export default function SetupPage() {
       return;
     }
     setError(null);
+    setEngineNote(null);
     setLoading(true);
     try {
       const batch = await generateQuestions({
@@ -101,12 +104,20 @@ export default function SetupPage() {
         count,
         difficulty,
       });
+      if (!batch.questions?.length) {
+        throw new Error("No questions returned from generation engine.");
+      }
       saveSession({
         config: { topics: selected, difficulty, count },
         questions: batch.questions,
         answers: [],
         startedAt: new Date().toISOString(),
       });
+      if (batch.engine === "mock") {
+        setEngineNote(
+          "Gemini unavailable — served curated mock MCQs. Check GEMINI_API_KEY on the backend."
+        );
+      }
       router.push("/interview");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate questions");
@@ -116,6 +127,13 @@ export default function SetupPage() {
 
   return (
     <div ref={root} className="space-y-8 pb-28">
+      <AiBusyOverlay
+        open={loading}
+        mode="generate"
+        topics={selected}
+        count={count}
+        difficulty={difficulty}
+      />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="label-caps mb-3 flex flex-wrap gap-4 text-ink-muted">
@@ -303,6 +321,11 @@ export default function SetupPage() {
           {error}
         </p>
       )}
+      {engineNote && (
+        <p className="rounded-panel border border-amber-900/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+          {engineNote}
+        </p>
+      )}
 
       <div
         data-setup-dock
@@ -311,21 +334,14 @@ export default function SetupPage() {
         <div className="mx-auto flex max-w-[1440px] flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6 lg:px-12">
           <p className="label-caps text-ink-secondary">
             ● {armed} Topics Selected ● {count} Questions ● Est. {estMinutes} Mins
-            ● Mode: Audio/MCQ
+            ● Mode: MCQ · Gemini
           </p>
           <MagneticButton
             disabled={loading || armed === 0}
             onClick={() => void beginSession()}
             className="items-center justify-center rounded-full bg-ink px-6 py-2.5 text-sm font-medium text-canvas disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-canvas/30 border-t-canvas" />
-                Arming Session…
-              </span>
-            ) : (
-              "Begin Session →"
-            )}
+            {loading ? "Generating MCQs…" : "Begin Session →"}
           </MagneticButton>
         </div>
       </div>

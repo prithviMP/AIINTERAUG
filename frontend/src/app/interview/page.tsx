@@ -8,6 +8,7 @@ import { clearSession, loadSession, saveSession } from "@/lib/session";
 import type { InterviewSession, OptionId } from "@/lib/types";
 import { MagneticButton } from "@/components/motion/MagneticButton";
 import { Pressable } from "@/components/motion/Pressable";
+import { AiBusyOverlay } from "@/components/motion/AiBusyOverlay";
 import { useMotion } from "@/components/motion/GsapProvider";
 
 type InputMode = "mcq" | "text" | "voice";
@@ -251,6 +252,7 @@ export default function InterviewPage() {
 
   return (
     <div className="space-y-6 pb-24">
+      <AiBusyOverlay open={submitting} mode="evaluate" />
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3">
         <div className="flex flex-wrap items-center gap-3">
           <span className="label-caps text-ink">

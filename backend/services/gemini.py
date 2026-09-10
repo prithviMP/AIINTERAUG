@@ -1,56 +1,72 @@
-"""Gemini-backed question generation and evaluation with mock fallback."""
+"""Gemini-backed MCQ generation and evaluation with mock fallback."""
 
 from __future__ import annotations
 
 import json
+import logging
 import os
-from typing import Optional
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from schemas import (
     EvaluateRequest,
+    EvaluationPayload,
     EvaluationResult,
     GenerateRequest,
     QuestionBatch,
 )
 from services.mock_questions import get_mock_questions
 
-load_dotenv()
+# Always load backend/.env regardless of process cwd
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+logger = logging.getLogger("coach.ai.gemini")
 
 MODEL_ID = "gemini-2.5-flash"
 
 
+def _api_key() -> str:
+    return os.getenv("GEMINI_API_KEY", "").strip()
+
+
 def _client():
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    api_key = _api_key()
     if not api_key:
         return None
     try:
         from google import genai
 
         return genai.Client(api_key=api_key)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to init Gemini client: %s", exc)
         return None
 
 
-def generate_questions(payload: GenerateRequest) -> QuestionBatch:
+def generate_questions(payload: GenerateRequest) -> tuple[QuestionBatch, str]:
+    """Return (batch, engine) where engine is 'gemini' or 'mock'."""
     client = _client()
     if client is None:
-        return get_mock_questions(payload.topics, payload.count, payload.difficulty)
+        logger.info("Gemini unavailable — using mock bank")
+        return get_mock_questions(payload.topics, payload.count, payload.difficulty), "mock"
 
-    prompt = f"""You are COACH.AI, an adversarial technical interview engine for senior engineers.
-Generate exactly {payload.count} multiple-choice interview questions.
+    prompt = f"""You are COACH.AI, an adversarial technical interview engine.
+Generate exactly {payload.count} MULTIPLE-CHOICE (MCQ) interview questions only.
 
-Topics: {', '.join(payload.topics)}
+Topics selected by candidate: {', '.join(payload.topics)}
 Seniority / difficulty: {payload.difficulty}
+Format: MCQ only (never ask for free-text or voice answers).
 
-Rules:
-- Each question must have exactly 4 options with ids A, B, C, D.
-- Exactly one correct_option_id.
-- Provide a concise explanation.
-- Optionally include a short code_snippet and code_language when it strengthens the stem.
-- Calibrate depth for {payload.difficulty} (junior=fundamentals, senior=production trade-offs, staff=distributed systems / failure domains).
-- Questions must be unique and high-signal, not trivia.
+Hard requirements:
+- Exactly {payload.count} questions in the "questions" array.
+- Each question: topic (string), question stem, exactly 4 options with ids A/B/C/D, one correct_option_id, concise explanation.
+- Distribute questions across the selected topics as evenly as possible.
+- Calibrate depth for {payload.difficulty}:
+  - junior: fundamentals and clear correctness
+  - senior: production trade-offs, concurrency, operational edge cases
+  - staff: distributed failure domains, consistency models, capacity / latency budgets
+- Prefer high-signal scenario stems. Optionally include a short code_snippet + code_language when useful.
+- No duplicate questions. No trick trivia.
 """
 
     try:
@@ -60,29 +76,35 @@ Rules:
             config={
                 "response_mime_type": "application/json",
                 "response_schema": QuestionBatch,
+                "temperature": 0.85,
             },
         )
         raw = response.text
         if not raw:
             raise ValueError("Empty Gemini response")
-        data = json.loads(raw)
-        batch = QuestionBatch.model_validate(data)
-        # Normalize ids to 1..n
+        batch = QuestionBatch.model_validate(json.loads(raw))
         questions = [
             q.model_copy(update={"id": i})
             for i, q in enumerate(batch.questions[: payload.count], start=1)
         ]
         if len(questions) < payload.count:
-            fill = get_mock_questions(payload.topics, payload.count - len(questions), payload.difficulty)
+            fill = get_mock_questions(
+                payload.topics, payload.count - len(questions), payload.difficulty
+            )
             start = len(questions) + 1
             for offset, q in enumerate(fill.questions):
                 questions.append(q.model_copy(update={"id": start + offset}))
-        return QuestionBatch(questions=questions[: payload.count])
-    except Exception:
-        return get_mock_questions(payload.topics, payload.count, payload.difficulty)
+        logger.info("Generated %s MCQs via Gemini", len(questions[: payload.count]))
+        return QuestionBatch(questions=questions[: payload.count]), "gemini"
+    except Exception as exc:
+        logger.exception("Gemini generate failed — falling back to mock: %s", exc)
+        return (
+            get_mock_questions(payload.topics, payload.count, payload.difficulty),
+            "mock",
+        )
 
 
-def evaluate_submissions(payload: EvaluateRequest) -> EvaluationResult:
+def evaluate_submissions(payload: EvaluateRequest) -> tuple[EvaluationResult, str]:
     total = len(payload.submissions)
     correct = sum(
         1
@@ -93,21 +115,21 @@ def evaluate_submissions(payload: EvaluateRequest) -> EvaluationResult:
 
     client = _client()
     if client is None:
-        return _heuristic_evaluation(payload, base_score, correct, total)
+        return _heuristic_evaluation(payload, base_score, correct, total), "mock"
 
-    prompt = f"""You are COACH.AI evaluation kernel. Score this interview session.
-Correct answers: {correct}/{total} (objective accuracy {base_score}%).
+    prompt = f"""You are COACH.AI evaluation kernel for MCQ technical interviews.
+Objective accuracy: {correct}/{total} ({base_score}%).
 
-Submissions JSON:
+Submissions:
 {payload.model_dump_json(indent=2)}
 
-Return a calibrated EvaluationResult:
-- score: integer 0-100 (weight objective accuracy heavily; adjust ±5 for reasoning quality signals if evident)
-- feedback: 1-2 sentences overall synthesis
-- strengths: 2-4 concrete strengths tied to topics answered correctly
-- areas_to_improve: 2-4 actionable gaps for incorrect or weak topics
-- category_scores: optional map of topic -> 0-100
-Be rigorous, not sycophantic. Staff-level calibration tone.
+Return EvaluationResult JSON:
+- score: 0-100, stay within ±8 of objective accuracy {base_score}
+- feedback: 1-2 sentences, rigorous (not sycophantic)
+- strengths: 2-4 concrete strengths from correct topics
+- areas_to_improve: 2-4 actionable gaps from incorrect topics
+- category_scores: map of topic -> 0-100 based on that topic's accuracy
+Tone: Staff-level calibration. MCQ session only.
 """
 
     try:
@@ -116,19 +138,22 @@ Be rigorous, not sycophantic. Staff-level calibration tone.
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
-                "response_schema": EvaluationResult,
+                "response_schema": EvaluationPayload,
+                "temperature": 0.4,
             },
         )
         raw = response.text
         if not raw:
             raise ValueError("Empty Gemini response")
-        result = EvaluationResult.model_validate(json.loads(raw))
-        # Keep score grounded near objective accuracy
-        if abs(result.score - base_score) > 15:
+        payload_out = EvaluationPayload.model_validate(json.loads(raw))
+        result = EvaluationResult(**payload_out.model_dump())
+        if abs(result.score - base_score) > 12:
             result.score = base_score
-        return result
-    except Exception:
-        return _heuristic_evaluation(payload, base_score, correct, total)
+        logger.info("Evaluated session via Gemini score=%s", result.score)
+        return result, "gemini"
+    except Exception as exc:
+        logger.exception("Gemini evaluate failed — heuristic fallback: %s", exc)
+        return _heuristic_evaluation(payload, base_score, correct, total), "mock"
 
 
 def _heuristic_evaluation(
@@ -160,7 +185,7 @@ def _heuristic_evaluation(
 
     feedback = (
         f"Objective accuracy {correct}/{total} ({base_score}%). "
-        "Evaluation ran in offline/mock mode; connect GEMINI_API_KEY for richer synthesis."
+        "Evaluation used offline heuristics; Gemini synthesis unavailable."
     )
     return EvaluationResult(
         score=base_score,
@@ -172,4 +197,4 @@ def _heuristic_evaluation(
 
 
 def gemini_available() -> bool:
-    return _client() is not None
+    return bool(_api_key()) and _client() is not None

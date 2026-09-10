@@ -5,10 +5,10 @@ import type {
   Submission,
 } from "./types";
 
-const API_BASE = process.env.API_URL || "http://localhost:8000";
+export const API_URL = process.env.API_URL || "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -47,5 +47,3 @@ export async function evaluateSession(
     body: JSON.stringify({ submissions }),
   });
 }
-
-export { API_BASE as API_URL };

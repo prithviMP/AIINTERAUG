@@ -32,6 +32,11 @@ class QuestionBatch(BaseModel):
     questions: List[Question]
 
 
+class GenerateResponse(BaseModel):
+    questions: List[Question]
+    engine: Literal["gemini", "mock"] = "mock"
+
+
 class Submission(BaseModel):
     topic: str
     question: str
@@ -44,6 +49,17 @@ class EvaluateRequest(BaseModel):
 
 
 class EvaluationResult(BaseModel):
+    score: int = Field(..., ge=0, le=100)
+    feedback: str
+    strengths: List[str]
+    areas_to_improve: List[str]
+    category_scores: Optional[dict[str, int]] = None
+    engine: Optional[Literal["gemini", "mock"]] = None
+
+
+class EvaluationPayload(BaseModel):
+    """Schema sent to Gemini (no engine field)."""
+
     score: int = Field(..., ge=0, le=100)
     feedback: str
     strengths: List[str]

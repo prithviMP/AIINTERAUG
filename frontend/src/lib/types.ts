@@ -20,6 +20,7 @@ export interface Question {
 
 export interface QuestionBatch {
   questions: Question[];
+  engine?: "gemini" | "mock";
 }
 
 export interface GenerateRequest {
@@ -41,6 +42,7 @@ export interface EvaluationResult {
   strengths: string[];
   areas_to_improve: string[];
   category_scores?: Record<string, number> | null;
+  engine?: "gemini" | "mock" | null;
 }
 
 export interface SessionConfig {

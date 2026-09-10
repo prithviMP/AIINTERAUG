@@ -162,6 +162,14 @@ export default function ResultsPage() {
           Candidate Evaluation & Synthesis
         </h1>
         <p className="mt-2 text-sm text-ink-secondary">{evaluation.feedback}</p>
+        {evaluation.engine && (
+          <p className="label-caps mt-2 text-ink-muted">
+            EVAL ENGINE:{" "}
+            <span className={evaluation.engine === "gemini" ? "text-emerald" : "text-warn"}>
+              {evaluation.engine.toUpperCase()}
+            </span>
+          </p>
+        )}
       </div>
 
       <section className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
