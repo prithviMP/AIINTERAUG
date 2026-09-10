@@ -66,7 +66,7 @@ A Blueprint file lives at [`backend/render.yaml`](backend/render.yaml) for one-c
 3. Framework Preset: **Next.js** (auto-detected).
 4. Build Command: `npm run build` (see [`frontend/vercel.json`](frontend/vercel.json)).
 5. Environment Variable:
-   - `NEXT_PUBLIC_API_URL` = `https://<your-render-service>.onrender.com` (no trailing slash)
+   - `API_URL` = `https://<your-render-service>.onrender.com` (no trailing slash)
 6. Deploy. CORS on the backend allows all origins for MVP (`allow_origins=["*"]`).
 
 ### Local pair run
