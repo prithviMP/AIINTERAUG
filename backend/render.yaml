@@ -1,0 +1,15 @@
+# Prefer deploying with Render Root Directory set to `backend`.
+# This Blueprint assumes Root Directory = backend (paths relative to backend/).
+
+services:
+  - type: web
+    name: coach-ai-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.8"

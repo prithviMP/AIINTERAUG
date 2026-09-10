@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-inter), Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .label-caps {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.06em];
+  }
+
+  .panel {
+    @apply rounded-panel border border-white/[0.08] bg-surface;
+  }
+
+  .panel-raised {
+    @apply rounded-panel border border-surface-high bg-surface-raised shadow-bevel;
+  }
+}
+
+/* Subtle grid atmosphere without neon glow blobs */
+.bg-console {
+  background-color: #09090b;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
