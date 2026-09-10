@@ -2,6 +2,14 @@
 
 AI-powered technical interview coach. Monorepo with Next.js frontend (Vercel) and FastAPI backend (Render).
 
+## Student tutorial
+
+Follow the full class walkthrough (Stitch design → PRDs → Cursor prompts → build → Gemini → Vercel/Render):
+
+**[docs/STUDENT_BUILD_GUIDE.md](docs/STUDENT_BUILD_GUIDE.md)**
+
+Design mocks: [`docs/design-mocks/`](docs/design-mocks/) · Tokens: [`docs/DESIGN.md`](docs/DESIGN.md)
+
 ## Structure
 
 ```
