@@ -1,17 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import gsap from "gsap";
 import { evaluateSession } from "@/lib/api";
 import { clearSession, loadSession, saveSession } from "@/lib/session";
 import type { InterviewSession, OptionId } from "@/lib/types";
+import { MagneticButton } from "@/components/motion/MagneticButton";
+import { Pressable } from "@/components/motion/Pressable";
+import { useMotion } from "@/components/motion/GsapProvider";
 
 type InputMode = "mcq" | "text" | "voice";
 
 const TIMER_SECONDS = 5 * 60;
+const MODES: { id: InputMode; label: string }[] = [
+  { id: "mcq", label: "Multiple Choice" },
+  { id: "text", label: "Text Explanation" },
+  { id: "voice", label: "Voice Input" },
+];
 
 export default function InterviewPage() {
   const router = useRouter();
+  const { reducedMotion } = useMotion();
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const modeTrackRef = useRef<HTMLDivElement | null>(null);
+  const modePillRef = useRef<HTMLDivElement | null>(null);
+  const skipRef = useRef<HTMLButtonElement | null>(null);
+
   const [session, setSession] = useState<InterviewSession | null>(null);
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<OptionId | null>(null);
@@ -46,6 +61,33 @@ export default function InterviewPage() {
     }, 1000);
     return () => window.clearInterval(id);
   }, [session, index]);
+
+  useLayoutEffect(() => {
+    if (!contentRef.current || reducedMotion) return;
+    gsap.fromTo(
+      contentRef.current,
+      { opacity: 0, y: 12 },
+      { opacity: 1, y: 0, duration: 0.28, ease: "power3.out" }
+    );
+  }, [index, reducedMotion]);
+
+  useLayoutEffect(() => {
+    if (!modeTrackRef.current || !modePillRef.current || reducedMotion) return;
+    const buttons = modeTrackRef.current.querySelectorAll<HTMLButtonElement>(
+      "[data-mode-btn]"
+    );
+    const idx = MODES.findIndex((m) => m.id === mode);
+    const btn = buttons[idx];
+    if (!btn) return;
+    const track = modeTrackRef.current.getBoundingClientRect();
+    const rect = btn.getBoundingClientRect();
+    gsap.to(modePillRef.current, {
+      x: rect.left - track.left,
+      width: rect.width,
+      duration: 0.25,
+      ease: "power3.out",
+    });
+  }, [mode, reducedMotion]);
 
   const question = session?.questions[index];
   const total = session?.questions.length ?? 0;
@@ -88,8 +130,7 @@ export default function InterviewPage() {
         };
       });
       const evaluation = await evaluateSession(submissions);
-      const finalSession = { ...nextSession, evaluation };
-      saveSession(finalSession);
+      saveSession({ ...nextSession, evaluation });
       router.push("/results");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Evaluation failed");
@@ -100,6 +141,21 @@ export default function InterviewPage() {
   function onSelect(option: OptionId) {
     setSelected(option);
     persistAnswer(option);
+    if (!reducedMotion) {
+      const el = document.getElementById(`opt-${option}`);
+      if (el) {
+        gsap.fromTo(
+          el,
+          { scale: 0.98 },
+          {
+            scale: 1,
+            duration: 0.22,
+            ease: "power3.out",
+            boxShadow: "0 0 0 1px #10B981",
+          }
+        );
+      }
+    }
   }
 
   async function onSubmitNext() {
@@ -118,6 +174,21 @@ export default function InterviewPage() {
   }
 
   function onSkip() {
+    if (!reducedMotion && skipRef.current) {
+      gsap.fromTo(
+        skipRef.current,
+        { x: 0 },
+        {
+          keyframes: [
+            { x: -6, duration: 0.06 },
+            { x: 5, duration: 0.06 },
+            { x: -3, duration: 0.06 },
+            { x: 0, duration: 0.08 },
+          ],
+          ease: "power2.out",
+        }
+      );
+    }
     if (!session || !question) return;
     if (isLast) {
       const next = persistAnswer(selected ?? "A");
@@ -140,12 +211,8 @@ export default function InterviewPage() {
         c: "C",
         d: "D",
       };
-      if (map[e.key]) {
-        onSelect(map[e.key]);
-      }
-      if (e.key === "Enter") {
-        void onSubmitNext();
-      }
+      if (map[e.key]) onSelect(map[e.key]);
+      if (e.key === "Enter") void onSubmitNext();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -165,13 +232,12 @@ export default function InterviewPage() {
         <p className="text-sm text-ink-secondary">
           Configure an assessment vector before entering the live room.
         </p>
-        <button
-          type="button"
-          onClick={() => router.push("/setup")}
-          className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-canvas"
+        <MagneticButton
+          href="/setup"
+          className="items-center justify-center rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-canvas"
         >
           Open Setup Engine →
-        </button>
+        </MagneticButton>
       </div>
     );
   }
@@ -209,7 +275,7 @@ export default function InterviewPage() {
         </span>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div ref={contentRef} className="grid gap-6 lg:grid-cols-2">
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="label-caps text-ink-muted">SCENARIO SPECIFICATION</span>
@@ -254,25 +320,28 @@ export default function InterviewPage() {
         </section>
 
         <section className="space-y-4">
-          <div className="inline-flex rounded-full border border-surface-high bg-surface p-1">
-            {(
-              [
-                ["mcq", "Multiple Choice"],
-                ["text", "Text Explanation"],
-                ["voice", "Voice Input"],
-              ] as const
-            ).map(([id, label]) => (
+          <div
+            ref={modeTrackRef}
+            className="relative inline-flex rounded-full border border-surface-high bg-surface p-1"
+          >
+            <div
+              ref={modePillRef}
+              className="absolute bottom-1 top-1 rounded-full bg-ink"
+              style={{ width: 120, left: 4 }}
+            />
+            {MODES.map((m) => (
               <button
-                key={id}
+                key={m.id}
                 type="button"
-                onClick={() => setMode(id)}
-                className={`rounded-full px-3 py-1.5 text-xs transition sm:text-sm ${
-                  mode === id
-                    ? "bg-ink font-medium text-canvas"
+                data-mode-btn
+                onClick={() => setMode(m.id)}
+                className={`relative z-10 rounded-full px-3 py-1.5 text-xs transition sm:text-sm ${
+                  mode === m.id
+                    ? "font-medium text-canvas"
                     : "text-ink-secondary"
                 }`}
               >
-                {label}
+                {m.label}
               </button>
             ))}
           </div>
@@ -281,26 +350,29 @@ export default function InterviewPage() {
             <div className="space-y-3">
               {question.options.map((opt) => {
                 const active = selected === opt.id;
+                const dimmed = selected !== null && !active;
                 return (
-                  <button
+                  <Pressable
                     key={opt.id}
+                    id={`opt-${opt.id}`}
                     type="button"
+                    flashRing
                     onClick={() => onSelect(opt.id)}
                     className={`w-full rounded-panel border p-4 text-left transition ${
                       active
                         ? "border-emerald bg-emerald-soft shadow-ring"
                         : "border-white/[0.08] bg-surface hover:border-white/20"
-                    }`}
+                    } ${dimmed ? "opacity-55" : "opacity-100"}`}
                   >
                     <div className="flex items-start gap-3">
                       <span
-                        className={`label-caps mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                        className={`label-caps mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition ${
                           active
                             ? "border-emerald bg-emerald text-canvas"
                             : "border-surface-high text-ink-muted"
                         }`}
                       >
-                        {opt.id}
+                        {active ? "✓" : opt.id}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm leading-relaxed text-ink">{opt.text}</p>
@@ -311,7 +383,7 @@ export default function InterviewPage() {
                         )}
                       </div>
                     </div>
-                  </button>
+                  </Pressable>
                 );
               })}
             </div>
@@ -323,13 +395,13 @@ export default function InterviewPage() {
                   ? "Text explanation input will be enabled in a later release. Use Multiple Choice for this MVP."
                   : "Voice synthesis capture is UI-only for this MVP. Switch back to Multiple Choice."}
               </p>
-              <button
+              <Pressable
                 type="button"
                 onClick={() => setMode("mcq")}
                 className="rounded-full border border-emerald bg-emerald-soft px-4 py-2 text-sm text-emerald"
               >
                 Return to MCQ
-              </button>
+              </Pressable>
             </div>
           )}
 
@@ -357,17 +429,18 @@ export default function InterviewPage() {
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/[0.08] bg-canvas/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-4 md:px-6 lg:px-12">
           <button
+            ref={skipRef}
             type="button"
             onClick={onSkip}
-            className="text-sm text-ink-secondary hover:text-ink"
+            className="text-sm text-ink-secondary will-change-transform hover:text-ink"
           >
             Skip Question
           </button>
-          <p className="hidden label-caps text-ink-muted sm:block">
+          <p className="label-caps hidden text-ink-muted sm:block">
             1-4 Select Option · Enter Submit
           </p>
           <div className="flex items-center gap-2">
-            <button
+            <Pressable
               type="button"
               onClick={() => {
                 clearSession();
@@ -377,19 +450,18 @@ export default function InterviewPage() {
               title="Abort session"
             >
               ✎
-            </button>
-            <button
-              type="button"
+            </Pressable>
+            <MagneticButton
               disabled={submitting || !selected}
               onClick={() => void onSubmitNext()}
-              className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-canvas disabled:opacity-50"
+              className="items-center justify-center rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-canvas disabled:opacity-50"
             >
               {submitting
                 ? "Evaluating…"
                 : isLast
                   ? "Submit & Finish →"
                   : "Submit & Next →"}
-            </button>
+            </MagneticButton>
           </div>
         </div>
       </div>

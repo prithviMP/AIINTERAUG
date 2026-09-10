@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { GeistSans } from "geist/font/sans";
 import { AppShell } from "@/components/layout/AppShell";
+import { GsapProvider } from "@/components/motion/GsapProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -32,7 +33,9 @@ export default function RootLayout({
       <body
         className={`${GeistSans.variable} ${inter.variable} ${jetbrains.variable} ${GeistSans.className} antialiased`}
       >
-        <AppShell>{children}</AppShell>
+        <GsapProvider>
+          <AppShell>{children}</AppShell>
+        </GsapProvider>
       </body>
     </html>
   );
